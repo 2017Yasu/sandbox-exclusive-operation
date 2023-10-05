@@ -5,7 +5,7 @@ const tuple = <T extends string[]>(...args: T) => args;
 
 /**
  *
- * @param waitUntil 0 を指定した時はロックが解除されるまで待つ
+ * @param waitUntil 0 を指定した時はロックが解除されるまで待ちます
  * @param keys
  */
 export function useExclusiveOperation<T extends string[]>(
@@ -14,7 +14,29 @@ export function useExclusiveOperation<T extends string[]>(
 ) {
   const keyTuple = tuple(...keys);
 
-  const lockedKeyMap = ref<{ [key: string]: boolean }>({});
+  const lockedKeyMap = ref<{ [key: string]: boolean }>(
+    keyTuple.reduce<{ [key: string]: boolean }>(
+      (pre, cur) => ({
+        ...pre,
+        [cur]: false,
+      }),
+      {},
+    ),
+  );
+
+  const lock = (key: (typeof keyTuple)[number]) => {
+    lockedKeyMap.value = {
+      ...lockedKeyMap.value,
+      [key]: true,
+    };
+  };
+
+  const release = (key: (typeof keyTuple)[number]) => {
+    lockedKeyMap.value = {
+      ...lockedKeyMap.value,
+      [key]: false,
+    };
+  };
 
   const doOperation = async (
     key: (typeof keyTuple)[number],
@@ -25,16 +47,17 @@ export function useExclusiveOperation<T extends string[]>(
       if (onTimeout) await onTimeout();
       return;
     }
-    lockedKeyMap.value = {
-      ...lockedKeyMap.value,
-      [key]: true,
-    };
+    lock(key);
     await nextTick();
-    await operation();
-    lockedKeyMap.value = {
-      ...lockedKeyMap.value,
-      [key]: false,
-    };
+
+    try {
+      await operation();
+    } catch (error) {
+      console.error("An error occurred while processing operation.", error);
+      throw error;
+    } finally {
+      release(key);
+    }
     await nextTick();
   };
 
